@@ -1,6 +1,6 @@
 """A fake payment processor (Step 6: pay-in platform + PSP + vault).
 
-Pretend this is Stripe or Adyen behind Airbnb's pay-in platform. Two things
+Pretend this is Stripe or Adyen behind a pay-in platform. Two things
 make it behave like a real external system:
 
 1. It uses its OWN database connection and commits immediately. Our
@@ -72,7 +72,7 @@ def charge(idempotency_key: str, card_token: str, amount_cents: int,
         # 3. Store the result under the key. ON CONFLICT handles two requests
         #    with the same key arriving at the same moment: only one insert
         #    wins, the loser reads the winner's row. (Real processors use a
-        #    lock for this; Airbnb's pay-in platform used Redis.)
+        #    lock for this, often in Redis.)
         row = conn.execute(
             """
             INSERT INTO psp_charges

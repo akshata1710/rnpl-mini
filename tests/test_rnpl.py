@@ -1,4 +1,4 @@
-"""Failure-injection tests: the script's reflection was "add these EARLY".
+"""Failure-injection tests: add these EARLY, before launch.
 Each test is one story. Read them as documentation.
 
 Needs a running Postgres (docker compose up -d). WIPES the database.

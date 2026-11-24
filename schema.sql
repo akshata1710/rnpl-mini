@@ -57,7 +57,7 @@ CREATE TABLE reservations (
 
 
 -- ---------------------------------------------------------------------
--- Owned by: Payment-plan service  (the part "I owned" in the script)
+-- Owned by: Payment-plan service
 --
 -- One row = one promise to charge one reservation later.
 -- ---------------------------------------------------------------------
@@ -139,7 +139,7 @@ CREATE TABLE notifications (
 
 
 -- ---------------------------------------------------------------------
--- Owned by: THE PAYMENT PROCESSOR (Stripe/Adyen + Airbnb's pay-in platform).
+-- Owned by: THE PAYMENT PROCESSOR (a PSP such as Stripe or Adyen, behind a pay-in platform).
 -- In real life this is someone else's database. Our fake processor
 -- writes here with its OWN connection, so our transactions can never
 -- roll it back — exactly like a real external API.

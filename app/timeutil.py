@@ -1,6 +1,6 @@
 """THE helper that turns a check-in date into deadlines.
 
-From the script's "hardest bug": one reminder path used the server's time
+A classic scheduling bug: one reminder path used the server's time
 zone instead of the listing's, and guests got reminders at 3 am. The fix
 and the lesson: exactly ONE function turns a deadline into a time, and it
 always uses the LISTING's time zone. Everything is stored in UTC.

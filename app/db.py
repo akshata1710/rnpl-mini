@@ -19,7 +19,7 @@ def connect() -> psycopg.Connection:
 
     The session time zone is pinned to UTC. Otherwise timestamps come back
     in whatever zone the DB SERVER is configured for, which is exactly the
-    "server time zone vs listing time zone" bug from the script.
+    "server time zone vs listing time zone" bug.
     """
     return psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=True,
                            options="-c timezone=UTC")

@@ -2,42 +2,42 @@
 
 This guide goes in order:
 
-1. [What this is, mapped to your script](#1-what-this-is-mapped-to-your-script)
+1. [What this models](#1-what-this-models)
 2. [Dependencies: what each one is and why it's here](#2-dependencies)
 3. [The architecture and why it flows this way](#3-the-architecture-and-why-it-flows-this-way)
 4. [File by file: what each piece of code does](#4-file-by-file)
 5. [The life of one booking, traced through the code](#5-the-life-of-one-booking)
 6. [The plan state machine](#6-the-plan-state-machine)
 7. [Where every transaction starts and ends](#7-transaction-map)
-8. [Deep dives](#8-deep-dives) (the part to study before the interview)
+8. [Deep dives](#8-deep-dives)
 9. [What this mini version leaves out on purpose](#9-what-this-leaves-out)
 10. [Exercises](#10-exercises)
-11. [Interview question → file to point at](#11-interview-cheat-sheet)
+11. [Design question → file to point at](#11-design-question--file-to-point-at)
 
 ---
 
-## 1. What this is, mapped to your script
+## 1. What this models
 
-The script's one-sentence solution:
+The design in one sentence:
 
 > A payment-plan service records when each reservation must be charged. A pool of workers picks up plans as they come due and charges them through the pay-in platform with idempotency keys. Then events move the reservation to paid, or to retry, remind and finally release.
 
-Each piece of the script, and where it lives here:
+Each component of a production design, and where it lives here:
 
-| Script (slide 2 box) | Real system | Here |
+| Component | In production | Here |
 |---|---|---|
 | 1–2 Checkout + Booking API | separate service | `app/booking.py` (`check_eligibility`) |
 | 3 Reservations | separate service + DB | `reservations` table, `booking.py`, `consumers.reservations_consumer` |
 | 4 Payment-plan service | Python/FastAPI + Postgres | `app/plans.py` + `payment_plans` table |
 | 5 Charge workers | pods on Kubernetes | `app/worker.py` (threads or processes) |
-| 6 Pay-in platform, PSP, vault | Airbnb platform + Stripe/Adyen | `app/fake_psp.py` + `psp_charges` table |
+| 6 Pay-in platform, PSP, vault | pay-in platform + a PSP such as Stripe or Adyen | `app/fake_psp.py` + `psp_charges` table |
 | Redis lock + dedupe | Redis | idempotency key primary key in `psp_charges` |
 | Outbox + Kafka | outbox table + Kafka | `outbox` table, `app/relay.py`, `app/broker.py` (in-memory) |
 | Notifications | separate service | `consumers.notifications_consumer` + `notifications` table |
 | Sweeper for stuck plans | cron or worker | `app/sweeper.py` |
 | Backlog-age alert, reconciliation | metrics + daily job | `app/metrics.py` |
 
-The two correctness rules from the script are what the tests check:
+The two correctness rules are what the tests check:
 
 1. **Never charge a guest twice.** Covered by `test_many_workers_never_double_charge`, `test_worker_crash_after_charge_is_replayed_not_recharged` and `test_processor_timeout_retries_with_same_key`.
 2. **Never leave a reservation unpaid past its deadline.** Covered by `test_unpaid_reservation_is_released_at_deadline` and the `unpaid_past_deadline` reconciliation check.
@@ -127,7 +127,7 @@ Read them in this order. Each file's top docstring repeats the key idea.
 - `psp_charges`, `psp_refunds`: the "external" processor's records.
 
 ### `app/config.py` — every knob
-Buffer (2 days), retry backoff (6h, 12h, 24h), batch size, timeouts. Note the comment: **the retries add up to 42h, which fits inside the 48h buffer.** That's decision 3 from the script turned into numbers.
+Buffer (2 days), retry backoff (6h, 12h, 24h), batch size, timeouts. Note the comment: **the retries add up to 42h, which fits inside the 48h buffer.** That's the buffer decision turned into numbers.
 
 ### `app/db.py` — connections
 `connect()` opens an **autocommit** connection pinned to **UTC**. Autocommit means nothing is transactional unless you write `with conn.transaction():`, so every transaction is visible in the code. `init_db()` drops and recreates the schema and seeds five listings.
@@ -140,7 +140,7 @@ Buffer (2 days), retry backoff (6h, 12h, 24h), batch size, timeouts. Note the co
 - `first_charge_at(deadline)`: deadline − buffer − random jitter (jitter only makes the charge *earlier*).
 - `to_local(ts, tz)`: for display.
 
-This is the fix for the script's "hardest bug" (reminders in the server's time zone).
+This is the fix for a classic scheduling bug: reminders sent in the server's time zone instead of the listing's.
 
 ### `app/booking.py` — Booking API + Reservations (steps 1–3)
 - `check_eligibility`: policy flexible/moderate, currency supported and not excluded, and not too close to the deadline. It's server-side, so you can turn off a market without an app release.
@@ -287,7 +287,7 @@ Terminal states: **PAID, REFUNDED, CANCELLED, RELEASED.** Rule #2 in state-machi
 
 ## 8. Deep dives
 
-These are the topics an interviewer can push on. For each one: the concept, where it is in the code, and the follow-up question.
+These are the topics a design review would push on. For each one: the concept, where it is in the code, and the follow-up question.
 
 ### 8.1 `FOR UPDATE SKIP LOCKED`
 
@@ -314,7 +314,7 @@ CREATE INDEX idx_plans_due ON payment_plans (charge_at) WHERE status = 'SCHEDULE
 - Read the row (version 7) → decide → `UPDATE ... WHERE version = 7`. If 0 rows matched, someone beat you: re-read and decide again.
 - **Optimistic** because nothing is locked while you think. That's good when conflicts are rare, and they are here.
 - **Pessimistic** alternative: `SELECT ... FOR UPDATE` and hold the lock. `booking.change_dates` does that on the *reservation* row because it's short and local.
-- The big race in the script, guest cancels while the worker is charging:
+- The big race, guest cancels while the worker is charging:
   1. Worker claimed it (v1, IN_PROGRESS).
   2. Cancel sees IN_PROGRESS → `cas_update(cancel_requested=True)` → v2.
   3. Worker finishes → `cas_update(..., WHERE version = 1)` → **fails**.
@@ -329,7 +329,7 @@ CREATE INDEX idx_plans_due ON payment_plans (charge_at) WHERE status = 'SCHEDULE
 - Why a definite decline must use a *new* key: the old key is permanently bound to "declined", so retrying it would just replay the decline.
 - Why `update_card` is only allowed from NEEDS_NEW_CARD: that state is only reached after a definite decline. If you allowed a card change while an unknown outcome was pending, the next attempt with a new card would need a new key… and the old key might have charged the old card. (Real systems resolve the unknown first by querying the processor.)
 - Real processors also reject a reused key with **different parameters** (a different amount, say). Our fake doesn't check this. Exercise 4.
-- Two identical requests at once: `INSERT ... ON CONFLICT DO NOTHING` lets one win. Airbnb's platform used a Redis lock for the same purpose.
+- Two identical requests at once: `INSERT ... ON CONFLICT DO NOTHING` lets one win. Production systems often use a Redis lock for the same purpose.
 
 ### 8.5 Transactional outbox and at-least-once delivery
 
@@ -345,7 +345,7 @@ CREATE INDEX idx_plans_due ON payment_plans (charge_at) WHERE status = 'SCHEDULE
 
 - **Store UTC, compute in the listing's zone.** `timeutil.cancellation_deadline` builds the local 15:00 with `ZoneInfo(listing_tz)` and converts. `test_deadline_uses_listing_timezone` checks Tokyo and New York.
 - **DST:** "15:00 local, one day before" may be 23 or 25 hours from the previous 15:00. Computing in local wall-clock time and then converting handles it. Adding `timedelta(hours=24)` to a UTC time does not.
-- **The DB session time zone** is pinned to UTC in `db.connect()`. Without that, Postgres returns timestamps in the server's configured zone. The demo showed `-05:00` before that fix, which is a small version of the script's reminder bug.
+- **The DB session time zone** is pinned to UTC in `db.connect()`. Without that, Postgres returns timestamps in the server's configured zone. The demo showed `-05:00` before that fix, which is a small version of the reminder bug.
 - **Jitter:** many deadlines are exactly 15:00 local. Without jitter, every New York booking would charge in the same second. Jitter only subtracts, so the buffer is never eaten.
 - **Clock injection:** `clock.now(conn)` everywhere means tests can jump weeks ahead. Calling `datetime.now()` deep in business logic is a testing dead end.
 
@@ -354,7 +354,7 @@ CREATE INDEX idx_plans_due ON payment_plans (charge_at) WHERE status = 'SCHEDULE
 - **Soft** (insufficient funds, try again later): the same card may work later → backoff 6h, 12h, 24h.
 - **Hard** (expired, stolen): retrying is pointless → ask the guest right away (NEEDS_NEW_CARD + email).
 - **Unknown** (timeout): not a decline at all → retry in 1 minute with the **same** key.
-- The 2-day buffer exists so this whole schedule fits *before* the host's deadline. That's decision 3 in numbers. The script says the buffer was tuned with data (how long guests took to fix cards). Here it's a config value.
+- The 2-day buffer exists so this whole schedule fits *before* the host's deadline. That's the buffer decision in numbers. In production you'd tune the buffer with data (how long guests take to fix cards). Here it's a config value.
 - `_changes_for` also stops retrying if the next retry would land after the deadline.
 
 ### 8.8 The sweeper, leases, and "dead or just slow?"
@@ -372,7 +372,7 @@ CREATE INDEX idx_plans_due ON payment_plans (charge_at) WHERE status = 'SCHEDULE
 
 - **Backlog age** = now − the oldest `charge_at` among due SCHEDULED plans. It beats queue length: 10,000 plans due this second is fine, while one plan waiting 2 hours is an incident. In the real system the workers autoscale on it (instead of CPU) and it pages someone.
 - **Reconciliation** compares two independent records of the truth (ours and the processor's). It catches bugs your code doesn't know it has. `test_reconciliation_catches_money_without_a_booking` creates such a bug on purpose.
-- The script's reflection: "build these before launch, not after."
+- The lesson: build these before launch, not after.
 
 ### 8.11 Money representation
 
@@ -390,7 +390,7 @@ Know these so you can say "in the real system we also had…":
 - **Releasing a plan with an unknown outcome.** If the last attempt timed out and the deadline passes, the sweeper releases the plan even though money might have moved. Reconciliation would flag it (check A). A real system would ask the processor before releasing. Exercise 3.
 - **Calendar and overlap checks** at booking time.
 - **Reminder emails** before `charge_at` (they'd go through `timeutil`, like everything else involving time).
-- **Rate limiting per processor** (the script used Redis). One way: a token bucket per PSP in `worker.py`.
+- **Rate limiting per processor** (Redis is a common choice). One way: a token bucket per PSP in `worker.py`.
 - **Connection pooling** (`psycopg_pool`), auth, retries on DB errors, graceful shutdown, structured logs and metrics export.
 - **Polling cost.** Fine here. At scale you might poll less often, use `LISTEN/NOTIFY`, or split the table by time.
 - **Refund policy.** Here, cancelling after payment always refunds in full. That's reasonable because we charge before the free-cancellation deadline, but real policies are more complex.
@@ -412,7 +412,7 @@ Ordered from easy to hard. Each one teaches one deep dive.
 
 ---
 
-## 11. Interview cheat sheet
+## 11. Design question → file to point at
 
 | They ask | Point at |
 |---|---|

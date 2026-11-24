@@ -1,6 +1,6 @@
 """Monitoring: "how do you know you're not falling behind?"
 
-The script's answer: ONE number, backlog age. Plus a reconciliation
+The answer: ONE number, backlog age. Plus a reconciliation
 check that compares our plans with the processor's records.
 
 Note how both are plain SQL. That's a big payoff of keeping the schedule

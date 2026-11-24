@@ -1,4 +1,4 @@
-"""Booking API + Reservations (Steps 1-3 on the slide).
+"""Booking API + Reservations (Steps 1-3 in the architecture).
 
   1. Checkout asks: is this stay eligible for $0 today?  (server-side check)
   2. Guest confirms.

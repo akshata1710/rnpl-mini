@@ -1,4 +1,4 @@
-"""Charge workers (Step 5 on the slide).
+"""Charge workers (Step 5 in the architecture).
 
 The loop, in plain words:
   1. CLAIM:   lock a batch of due SCHEDULED plans (SKIP LOCKED), mark them

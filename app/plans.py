@@ -1,4 +1,4 @@
-"""Payment-plan service (Step 4 on the slide).
+"""Payment-plan service (Step 4 in the architecture).
 
 Owns the payment_plans table. Everyone else (Booking API, workers,
 sweeper) changes a plan only through the functions here, and every change
