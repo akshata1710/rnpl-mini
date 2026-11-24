@@ -1,4 +1,4 @@
-# rnpl-mini — Reserve Now, Pay Later, small enough to read in one sitting
+# rnpl-mini — Reserve Now, Pay Later
 
 A learning version of a "book for $0 now, charge automatically before the
 free-cancellation deadline" system. It's built for understanding, not scale.
