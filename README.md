@@ -1,4 +1,4 @@
-# rnpl-mini: Reserve Now, Pay Later, small enough to read in one sitting
+# rnpl-mini — Reserve Now, Pay Later
 
 A compact, fully working **deferred-payment scheduler**. A guest books a stay for $0 today, and the system charges their card automatically before the free-cancellation deadline. It retries soft declines, asks for a new card after hard ones, and releases the reservation if payment never arrives.
 
